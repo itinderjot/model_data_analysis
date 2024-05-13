@@ -144,7 +144,7 @@ def produce_random_coords(X_DIM,Y_DIM,SAMPLE_SIZE,COORDS_RETURN_TYPE='list'):
     return coords
 
 def produce_random_coords_conditional(SAMPLE_SIZE,TWOD_CONDITIONAL_FIELD, CONDITION_STATEMENT=lambda x: x != np.nan,COORDS_RETURN_TYPE='list'):
-    print('getting a random sample of coordinates <where condition is met> ...')
+    print('getting a random sample of coordinates where ',CONDITION_STATEMENT)
     print('        shape of the 2D condition field is ',np.shape(TWOD_CONDITIONAL_FIELD))
     
     def indices_where_condition_met(array, condition):
@@ -153,7 +153,7 @@ def produce_random_coords_conditional(SAMPLE_SIZE,TWOD_CONDITIONAL_FIELD, CONDIT
 
     # Get indices where condition is met
     coords_all = indices_where_condition_met(TWOD_CONDITIONAL_FIELD, CONDITION_STATEMENT)
-    print('length of all coordinates where condition is met is ',len(coords_all))
+    print('length of all coordinates where condition is met is ',len(coords_all),' about ',int(len(coords_all)*100.0/TWOD_CONDITIONAL_FIELD.size), ' percent of the total grid points')
 
     if COORDS_RETURN_TYPE=='list':
         coords_all =  [list(sublist) for sublist in coords_all]
