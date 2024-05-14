@@ -19,152 +19,146 @@ import seaborn as sns
 import matplotlib.ticker as ticker
 import read_vars_WRF_RAMS
 import variogram_helper_functions
+import matplotlib
+
+matplotlib.rcParams["font.family"] = "Roboto"
+matplotlib.rcParams["font.sans-serif"] = ["Roboto"]  # For non-unicode text
+#matplotlib.rcParams['axes.facecolor'] = [0.9,0.9,0.9]
+matplotlib.rcParams['axes.labelsize'] = 18
+matplotlib.rcParams['axes.titlesize'] = 18
+matplotlib.rcParams['xtick.labelsize'] = 18
+matplotlib.rcParams['ytick.labelsize'] = 18
+matplotlib.rcParams['legend.fontsize'] = 18
+#matplotlib.rcParams['legend.facecolor'] = 'w'
  
-def save_variogram(WHICH_TIME, VARIABLE, SIMULATIONS, SAMPLE_SIZE, DOMAIN, COLORS, SAVE_NPY, PLOT):
+def save_variogram(WHICH_TIME, VARIABLE, SIMULATION, CONDITION_INFO, SAMPLE_SIZE, DOMAIN, SAVE_CSV):
     print('working on domain' ,domain)
+    print('working on ',VARIABLE)
+    print('working on simulation: ',SIMULATION)
+    
+    # provide grid spacings in km to multiply with the variogram bin distances
     if DOMAIN=='1':
-        dx = 1.6
+        dx = 1.6 # km
     if DOMAIN=='2':
-        dx=0.4
+        dx=0.4   # km
     if DOMAIN=='3':
-        dx=0.1
-    print('working on ',VARIABLE,'\n')
-    if PLOT:
-        fig    = plt.figure(figsize=(8,8))
+        dx=0.1   # km
         
-    for ii,simulation in enumerate(SIMULATIONS):   
-        print('\n    working on simulation: ',simulation)
-        
-        if simulation[7]=='W':
-            model_name = 'WRF'
-            microphysics_scheme = simulation[8]
-        elif simulation[7]=='R':
-            model_name = 'RAMS'
+    
+    # which model are we working on; need this for the read_RAMS_WRF_data_file
+    if SIMULATION[7]=='W':
+        model_name = 'WRF'
+        microphysics_scheme = SIMULATION[8]
+    elif SIMULATION[7]=='R':
+        model_name = 'RAMS'
+    else:
+        print('!!!!!issues with identifying model_name!!!!!')
+
+    print('        model name: ',model_name)
+
+    # grab the file needed
+    if model_name=='RAMS':   
+        selected_fil = variogram_helper_functions.find_RAMS_file(SIMULATION=SIMULATION,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
+
+    if model_name=='WRF':
+        selected_fil =  variogram_helper_functions.find_WRF_file(SIMULATION=SIMULATION,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
+
+    timestring = variogram_helper_functions.get_time_from_RAMS_file(selected_fil)[0]
+    #### MAIN PART ####
+    z, z_name, z_units, z_time = read_vars_WRF_RAMS.read_variable(selected_fil,VARIABLE[0],model_name,output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+    # read the file to get coordinates
+    y_dim, x_dim     = np.shape(z)
+
+    if CONDITION_INFO[0]=='environment':
+        print('getting random coordinates over ',CONDITION_INFO[0],' points with threshold ',CONDITION_INFO[1])
+        print('        getting total condensate for conditional variogram')
+        if VARIABLE[1]<0:
+            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC',model_name,output_height=False,interpolate=True,level=0,interptype='model')
         else:
-            print('!!!!!issues with identifying model_name!!!!!')
-            break
-        print('        model name: ',model_name)
+            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC',model_name,output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+        print('        min, max for the condensate field is ',np.min(conditional_field),' ',np.max(conditional_field))
+        coords = variogram_helper_functions.produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x < CONDITION_INFO[1])
+    if CONDITION_INFO[0]=='storm': 
+        print('getting random coordinates over ',CONDITION_INFO[0],' points with threshold ',CONDITION_INFO[1])
+        print('        getting total condensate for conditional variogram')
+        if VARIABLE[1]<0:
+            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC',model_name,output_height=False,interpolate=True,level=0,interptype='model')
+        else:
+            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC',model_name,output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+        print('        min, max for the condensate field is ',np.min(conditional_field),' ',np.max(conditional_field))
+        coords = variogram_helper_functions.produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x >= CONDITION_INFO[1])
+    if CONDITION_INFO[0]=='all':
+        print('getting random coordinates over ',CONDITION_INFO[0],' points')
+        coords = variogram_helper_functions.produce_random_coords(x_dim,y_dim,SAMPLE_SIZE)   
 
-        if model_name=='RAMS':   
-            selected_fil = variogram_helper_functions.find_RAMS_file(SIMULATION=simulation,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
-            
-        if model_name=='WRF':
-            selected_fil =  variogram_helper_functions.find_WRF_file(SIMULATION=simulation,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
-        
-        
-        #### MAIN PART ####
-        z, z_name, z_units, z_time = read_vars_WRF_RAMS.read_variable(selected_fil,VARIABLE[0],model_name,output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
-        # read the file to get coordinates
-        y_dim, x_dim     = np.shape(z)
-        coords = variogram_helper_functions.produce_random_coords(x_dim,y_dim,SAMPLE_SIZE)                           
-        # produce a random sample of coordinates
-        nonnan_coords, nonnan_values = variogram_helper_functions.get_values_at_random_coords(z, coords)
-        # get the values of the field at the random coordinates
-        max_lag = np.sqrt(x_dim**2 + y_dim**2)/2.0# in grid points
-        num_lag_classses = int(max_lag*dx/5.0)
-        # create a variogram and save bin and variogram values in a matrix for saving
-        _ , bins, exp_variogram, matrix_for_saving = variogram_helper_functions.make_variogram(nonnan_coords, nonnan_values,num_lag_classses,MAXLAG=max_lag,DX=dx)
-        ##########################
-        
-        if SAVE_NPY:
-            if VARIABLE[2]:
-                data_file = 'experimental_variogram_'+simulation+'_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_'+z_time+'_'+simulation+'_1_sample_no_mask_d0'+DOMAIN+'.npy'
-            else:
-                data_file = 'experimental_variogram_'+simulation+'_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_'+z_time+'_'+simulation+'_1_sample_no_mask_d0'+DOMAIN+'.npy'
+    # produce a random sample of coordinates
+    nonnan_coords, nonnan_values = variogram_helper_functions.get_values_at_random_coords(z, coords)
+    # get the values of the field at the random coordinates
+    max_lag = np.sqrt(x_dim**2 + y_dim**2)/2.0# in grid points
+    num_lag_classses = int(max_lag*dx/5.0)
+    # create a variogram and save bin and variogram values in a matrix for saving
+    V , bins, exp_variogram = variogram_helper_functions.make_variogram(nonnan_coords, nonnan_values,num_lag_classses,MAXLAG=max_lag,DX=dx)
+    bins_middle_points, counts, widths = variogram_helper_functions.retrieve_histogram(V,DX=dx)
+    ##########################
 
-            with open(data_file, 'wb') as f:
-                np.save(f, matrix_for_saving)
-
-            print('        saving variogram data to ',data_file)
-            print('    ------\n')
-        
-        if PLOT:
-            plt.plot(bins,exp_variogram,label=simulation, color=COLORS[ii])
-        
-        
-    if PLOT:
+    if SAVE_CSV:
+        savecsv = '/home/isingh/code/variogram_data/'+SIMULATION+'/'+'G'+DOMAIN+'/CSVs'
+        if not os.path.exists(savecsv):
+            os.makedirs(savecsv)
         if VARIABLE[2]:
-            title_string = 'Variogram for '+VARIABLE[0]+' at '+VARIABLE[2]+' level '+str(int(VARIABLE[1]))+' for d0'+DOMAIN+'\nmid-simulation'
+            data_file = savecsv+'/experimental_variogram_'+SIMULATION+'_G'+DOMAIN+'_'+CONDITION_INFO[0]+'_points_threshold_'+str(CONDITION_INFO[1])+'_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_'+z_time+'.csv'
         else:
-            title_string = 'Variogram for '+VARIABLE[0]+' for d0'+DOMAIN+'\nmid-simulation'    
-        plt.title(title_string)
-        plt.xlabel('distance (km)')
-        plt.ylabel(VARIABLE[3])
-        #plt.yscale("log") 
-        plt.legend()
-        # if VARIABLE[2]:
-        #     filename = 'experimental_variogram_'+simulation[0:6]+'_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_1_sample_no_mask_d0'+DOMAIN+'_mid-simulation.png'
-        # else:
-        #     filename = 'experimental_variogram_'+simulation[0:6]+'_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_1_sample_no_mask_d0'+DOMAIN+'_mid-simulation.png'
-        # print('saving to file: ',filename)
-        if VARIABLE[2]:
-            filename = 'experimental_variogram_all_RAMS_sims_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_1_sample_no_mask_d0'+DOMAIN+'_'+WHICH_TIME+'-simulation.png'
-        else:
-            filename = 'experimental_variogram_all_RAMS_sims_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_1_sample_no_mask_d0'+DOMAIN+'_'+WHICH_TIME+'-simulation.png'
-        print('saving to file: ',filename)
-        plt.savefig(filename,dpi=150)
-        print('\n\n')
+            data_file = savecsv+'/experimental_variogram_'+SIMULATION+'_G'+DOMAIN+'_'+CONDITION_INFO[0]+'_points_threshold_'+str(CONDITION_INFO[1])+'_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_'+z_time+'.csv'
 
-#simulations_all=[['AUS1.1-WT','AUS1.1-WM','AUS1.1-R'],                                     \
-#                 ['DRC1.1-WT','DRC1.1-WM','DRC1.1-R'],['PHI1.1-WT','PHI1.1-WM','PHI1.1-R'],\
-#                 ['USA1.1-WT','USA1.1-WM','USA1.1-R'],['WPO1.1-WT','WPO1.1-WM','WPO1.1-R'],\
-#                 ['PHI2.1-R'],['BRA1.1-R'],['BRA1.2-R'],['RSA1.1-R'],['ARG1.1-R'],['ARG1.2-R']]
-simulations=['AUS1.1-R','DRC1.1-R','PHI1.1-R','USA1.1-R','WPO1.1-R','PHI2.1-R','BRA1.1-R','BRA1.2-R','RSA1.1-R','ARG1.1-R','ARG1.2-R']
+        data_matrix = np.column_stack((bins, counts, widths, exp_variogram))
+        np.savetxt(data_file, data_matrix, delimiter=',', header='bins,counts,widths,exp_variogram', comments='')
 
-#['ARG1.2-WT','ARG1.2-WM','ARG1.2-R']# ARG1.2-R has no G1 folder
+        print('        saving variogram data to ',data_file)
+        #print('    ------\n')
 
-#'PHI1.1-R','PHI2.1-R','WPO1.1-R','BRA1.1-R','USA1.1-R','DRC1.1-R','AUS1.1-R','ARG1.1-R_old']
-domain='3'
-variables = [['THETAV', 0, 'model', '$Theta_{v-sfc}^{2} (K^{2})$'],['THETAV', 0, 'model', '$Theta_{v-sfc}^{2} (K^{2})$'],\
-             ['QV', 0, 'model', '$Qvapor_{sfc}^{2} (kg^{2}kg^{-2})$'],\
-             ['W', 750, 'pressure', '$W_{750}^{2} (m^{2}s^{-2})$'],['WSPD', 0, 'model', '$WSPD_{sfc}^{2} (m^{2}s^{-2})$'],\
-             ['SHF', -999, None, '$SHF^{2} (Wm^{-2})$']           ,['LHF', -999, None, '$LHF^{2} (Wm^{-2})$']]
-# [['TOP_SOIL_MOISTURE', -999, None, '$SM^{2} (m^{3} m^{3})$'], ['LHF', -999, None, '$LHF^{2} (Wm^{-2})$'],\
-#              ['SHF', -999, None, '$SHF^{2} (Wm^{-2})$'],\
-#              ['Tk', 0, 'model', '$T_{sfc}^{2} (K^{2})$']             , ['THETA', 0, 'model', '$Theta_{sfc}^{2} (K^{2})$'],\
-#              ['QV', 0, 'model', '$Qvapor_{sfc}^{2} (kg^{2}kg^{-2})$'], ['RH', 0, 'model', '$RH_{sfc}^{2} (percent^{2})$'],\
-#              ['U', 0, 'model', '$U_{sfc}^{2} (m^{2}s^{-2})$']        , ['V', 0, 'model', '$V_{sfc}^{2} (m^{2}s^{-2})$'],\
-#              ['WSPD', 0, 'model', '$WSPD_{sfc}^{2} (m^{2}s^{-2})$']  , ['W', 0, 'model', '$W_{sfc}^{2} (m^{2}s^{-2})$'],\
-#              ['MCAPE', -999, None, '$MCAPE^{2} (J^{2}kg^{-2})$']     , ['MCIN', -999, None, '$MCIN^{2} (J^{2}kg^{-2})$'], \
-#              ['Tk', 750, 'pressure', '$T_{750}^{2} (K^{2})$']        , ['THETA', 750, 'pressure', '$Theta_{750}^{2} (K^{2})$'],\
-#              ['QV', 750, 'pressure', '$Qvapor_{750}^{2} (kg^{2}kg^{-2})$'], ['RH', 750, 'pressure', '$RH_{750}^{2} (percent^{2})$'],\
-#              ['U', 750, 'pressure', '$U_{750}^{2} (m^{2}s^{-2})$']   , ['V', 750, 'pressure', '$V_{750}^{2} (m^{2}s^{-2})$'],\
-#              ['WSPD', 750, 'pressure', '$WSPD_{750}^{2} (m^{2}s^{-2})$'], ['W', 750, 'pressure', '$W_{750}^{2} (m^{2}s^{-2})$'],\
-#              ['Tk', 500, 'pressure', '$T_{500}^{2} (K^{2})$']        , ['THETA', 500, 'pressure', '$Theta_{500}^{2} (K^{2})$'],\
-#              ['QV', 500, 'pressure', '$Qvapor_{500}^{2} (kg^{2}kg^{-2})$'], ['RH', 500, 'pressure', '$RH_{500}^{2} (percent^{2})$'],\
-#              ['U', 500, 'pressure', '$U_{500}^{2} (m^{2}s^{-2})$']   , ['V', 500, 'pressure', '$V_{500}^{2} (m^{2}s^{-2})$'],\
-#              ['WSPD', 500, 'pressure', '$WSPD_{500}^{2} (m^{2}s^{-2})$'], ['W', 500, 'pressure', '$W_{500}^{2} (m^{2}s^{-2})$'],\
-#              ['Tk', 200, 'pressure', '$T_{200}^{2} (K^{2})$']        , ['THETA', 200, 'pressure', '$Theta_{200}^{2} (K^{2})$'],\
-#              ['QV', 200, 'pressure', '$Qvapor_{200}^{2} (kg^{2}kg^{-2})$'], ['RH', 200, 'pressure', '$RH_{200}^{2} (percent^{2})$'],\
-#              ['U', 200, 'pressure', '$U_{200}^{2} (m^{2}s^{-2})$']   , ['V', 200, 'pressure', '$V_{200}^{2} (m^{2}s^{-2})$'], \
-#              ['WSPD', 200, 'pressure', '$WSPD_{200}^{2} (m^{2}s^{-2})$'], ['W', 200, 'pressure', '$W_{200}^{2} (m^{2}s^{-2})$']]
 
-#colors    =  ['#000000','#E69F00','#56B4E9','#009E73','#F0E442','#0072B2','#D55E00','#CC79A7']
-colors     = ['#000000','#377eb8', '#56B4E9','#ff7f00', '#4daf4a','#f781bf', '#a65628', '#984ea3','#999999', '#e41a1c', '#dede00']
+#------------------------------------------------------------------------------------------------------------------------
 
-# simulations_all=[['AUS1.1-WT','AUS1.1-WM','AUS1.1-R']] # use for testing
-#variables = [['LHF', -999, None, '$LHF^{2} (Wm^{-2})$']]# use for testing
-# for simulations in simulations_all:
-# for variable in variables:
-#     save_variogram('middle', variable, simulations, 150, domain, colors, False, True)
-#     print('=====================================================================================\n\n\n\n')
+variables =[ ['QV', 0, 'model', '$q_{v}$', '$kg^{2}kg^{-2}$']     ,['THETAV', 0, 'model','${\Theta}_{v}$', '$K^{2}$'],\
+             ['QV', 750, 'pressure', '$q_{v}$', '$kg^{2}kg^{-2}$'],['THETAV', 750, 'pressure','${\Theta}_{v}$', '$K^{2}$'],\
+             ['W', 750, 'pressure', '$w$', '$m^{2}s^{-2}$']       ,['WSPD', 0, 'model', '$wspd$', '$m^{2}s^{-2}$'],\
+             ['SHF', -999, None, '$SHF$', '$W^{2}m^{-4}$']        ,['LHF', -999, None, '$LHF$' , '$W^{2}m^{-4}$'],\
+             ['ITC',-999, None, '$ITC$', '$mm^{2}$']]
 
-#Running on the terminal in parallel
+colors      = ['#000000','#377eb8', '#56B4E9','#ff7f00', '#4daf4a','#f781bf', '#a65628', '#984ea3','#999999', '#e41a1c', '#dede00']
+simulations = ['AUS1.1-R','DRC1.1-R','PHI1.1-R','USA1.1-R','WPO1.1-R','PHI2.1-R','BRA1.1-R','BRA1.2-R','RSA1.1-R','ARG1.1-R','ARG1.2-R']
+#simulations_wrf=['AUS1.1-WT','AUS1.1-WM','DRC1.1-WT','DRC1.1-WM','USA1.1-WT','USA1.1-WM','PHI1.1-WT','PHI1.1-WM','WPO1.1-WT','WPO1.1-WM']
+domain='1'
+thresholds = [0.0000001,0.000001,0.00001,0.0001]
+
+# for simulation in simulations:
+#     for variable in variables:
+#         for threshold in thresholds:
+#             for partition in ['storm','environment','all']:
+#                 save_variogram('middle', variable, simulation, [partition, threshold] , 15000, domain, True)
+#                 print('=====================================================================================\n\n\n\n')
+
+                
+# Running on the terminal in parallel
 argument = []
 
 
-for variable in variables:
-    argument = argument + [('middle', variable, simulations, 15000, domain, colors, False, True)]
+# for variable in variables:
+#     argument = argument + [('middle', variable, simulations, 15000, domain, colors, False, True)]
 
-# for simulations in simulations_all:
-#     for variable in variables:
-#         argument = argument + [('middle', variable, simulations, 15000, domain, colors, False, True)]
+for simulation in simulations:
+    for variable in variables:
+        for threshold in thresholds:
+            for partition in ['storm','environment','all']:
+                #save_variogram('middle', variable, simulation, [partition, threshold] , 15000, domain, True)
+                #print('=====================================================================================\n\n\n\n')
+                argument = argument + [('middle', variable, simulation, [partition, threshold] , 15000, domain, True)]
 
 print('length of argument is: ',len(argument))
 
 
 # # ############################### FIRST OF ALL ################################
-cpu_count1 = 18 #cpu_count()
+cpu_count1 = 20 #cpu_count()
 print('number of cpus: ',cpu_count1)
 # # #############################################################################
 

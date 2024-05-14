@@ -10,6 +10,7 @@ from netCDF4 import Dataset
 from wrf import getvar, interpz3d, cape_2d, rh, interplevel
 import metpy.calc as mpcalc
 from metpy.units import units
+import re
 
 def get_time_from_RAMS_file(INPUT_FILE):
     """
@@ -32,6 +33,12 @@ def get_time_from_WRF_file(INPUT_FILE):
     cur_time = os.path.split(INPUT_FILE)[1][11:30] # Grab time string from WRF file
     pd_time = pd.to_datetime(cur_time[0:10]+' '+cur_time[11:19])
     return [pd_time.strftime('%Y-%m-%d %H:%M:%S'), pd_time.strftime('%Y%m%d%H%M%S')]
+
+def find_matching_RAMS_headfile(H5FILE):
+    converted_string = re.sub(r'-g\d+.h5$', '-head.txt', H5FILE)
+    if converted_string:
+        print('found a header file: ',converted_string)
+    return converted_string
 
 # PJM added read_head from RAMS_Post_Process (https://github.com/CSU-INCUS/RAMS_Post_Process)
 def read_head(headfile,h5file):
@@ -659,13 +666,14 @@ def read_variable(filepath,variable,model_type,output_height=False,interpolate=F
             output_var                = lwp/997.0*1000 # liquid water path in mm
             output_var[output_var<=0] = 0.001
         if variable=='ITC':
+            header_file = find_matching_RAMS_headfile(filepath)
+            zm, zt, nx, ny, dxy, npa = read_head(header_file,filepath)
             var_name   = 'integrated total condensate'
             var_units  = 'mm'
-            total_condensate = da['RTP'][:]-da['RV'][:]
-            # Load variables needed to calculate density
             th = da['THETA'][:]
             nx = np.shape(th)[2]
             ny = np.shape(th)[1]
+            rtp = da['RTP'][:] - da['RV'][:]
             pi = da['PI'][:]
             rv = da['RV'][:]
             # Convert RAMS native variables to temperature and pressure
@@ -678,11 +686,11 @@ def read_variable(filepath,variable,model_type,output_height=False,interpolate=F
             # Difference in heights (dz)    
             diff_zt_3D = np.tile(np.diff(zt),(int(ny),int(nx),1))
             diff_zt_3D = np.moveaxis(diff_zt_3D,2,0)
-            itc                       = np.nansum(total_condensate[1:,:,:]*dens[1:,:,:]*diff_zt_3D,axis=0) 
-            output_var                = itc/997.0*1000 # integrated total frozen condensate in mm
-            output_var[output_var<=0] = 0.001
-        
-        
+            # Calculate integrated condensate
+            itc = np.nansum(rtp[1:,:,:]*dens[1:,:,:]*diff_zt_3D,axis=0) # integrated total condensate in kg
+            output_var = itc/997.0*1000.0 # integrated total condensate in mm
+            output_var[output_var<=0] = 0.0001         
+            
     if model_type=='WRF':
         # load the WRF file 
         da = Dataset(filepath) #,engine="h5netcdf",phony_dims='sort')

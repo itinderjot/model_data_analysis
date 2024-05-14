@@ -40,28 +40,75 @@ def find_WRF_file(SIMULATION,DOMAIN,WHICH_TIME):
 def find_RAMS_file(SIMULATION, DOMAIN, WHICH_TIME):
     if DOMAIN=='1' or DOMAIN =='2':
         try:
-            rams_files=sorted(glob.glob('/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G'+DOMAIN+'/out/'+'a-A-*g'+DOMAIN+'.h5'))# CSU machine
+            first_folder = '/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G3/out_30s/'
+            print('searching in ',first_folder)
+            rams_files=sorted(glob.glob(first_folder+'a-L-*g'+DOMAIN+'.h5'))
+            print('        total # files = ',len(rams_files))
+            print('        first file is ',rams_files[0])
+            print('        last file is ',rams_files[-1])
+
+            if WHICH_TIME=='start':
+                selected_fil    = rams_files[0]
+            if WHICH_TIME=='middle':
+                selected_fil    = rams_files[int(len(rams_files)/2)]
+            if WHICH_TIME=='end':
+                selected_fil    = rams_files[-1]
+            print('        choosing the middle file: ',selected_fil)
         except (IndexError, FileNotFoundError):
-            print("No files found or folder does not exist. Trying a different folder...")
+            second_folder = '/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G'+DOMAIN+'/out/'
+            print('No files found or folder does not exist. Now searching in '+second_folder)
             # Change directory to a different folder and try again
-            if os.path.isdir('/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G3/out_30s/'+'a-L-*g1.h5'):
-                return find_RAMS_file(SIMULATION, DOMAIN, WHICH_TIME)  # Recursive call with a different folder
+            if os.path.isdir(second_folder):
+                rams_files=sorted(glob.glob(second_folder+'a-A-*g'+DOMAIN+'.h5'))
+                print('        total # files = ',len(rams_files))
+                print('        first file is ',rams_files[0])
+                print('        last file is ',rams_files[-1])
+
+                if WHICH_TIME=='start':
+                    selected_fil    = rams_files[0]
+                if WHICH_TIME=='middle':
+                    selected_fil    = rams_files[int(len(rams_files)/2)]
+                if WHICH_TIME=='end':
+                    selected_fil    = rams_files[-1]
+                print('        choosing the middle file: ',selected_fil)           
             else:
                 print("Alternate folder does not exist. Exiting function.")
         
     if DOMAIN=='3':
-        rams_files=sorted(glob.glob('/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G'+DOMAIN+'/out_30s/'+'a-L-*g3.h5'))# CSU machine
-    
-    print('        total # files = ',len(rams_files))
-    print('        first file is ',rams_files[0])
-    print('        last file is ',rams_files[-1])
-    if WHICH_TIME=='start':
-        selected_fil    = rams_files[0]
-    if WHICH_TIME=='middle':
-        selected_fil    = rams_files[int(len(rams_files)/2)]
-    if WHICH_TIME=='end':
-        selected_fil    = rams_files[-1]
-    print('        choosing the middle file: ',selected_fil)
+        try:
+            first_folder = '/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G'+DOMAIN+'/out_30s/'
+            print('searching in ',first_folder)
+            rams_files=sorted(glob.glob(first_folder+'a-L-*g3.h5'))
+            print('        total # files = ',len(rams_files))
+            print('        first file is ',rams_files[0])
+            print('        last file is ',rams_files[-1])
+
+            if WHICH_TIME=='start':
+                selected_fil    = rams_files[0]
+            if WHICH_TIME=='middle':
+                selected_fil    = rams_files[int(len(rams_files)/2)]
+            if WHICH_TIME=='end':
+                selected_fil    = rams_files[-1]
+            print('        choosing the middle file: ',selected_fil)
+        except (IndexError, FileNotFoundError):
+            second_folder = '/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G'+DOMAIN+'_old/out_30s/'
+            print('No files found or folder does not exist. Now searching in '+second_folder)
+            # Change directory to a different folder and try again
+            if os.path.isdir(second_folder):
+                rams_files=sorted(glob.glob(second_folder+'a-L-*g3.h5'))#
+                print('        total # files = ',len(rams_files))
+                print('        first file is ',rams_files[0])
+                print('        last file is ',rams_files[-1])
+
+                if WHICH_TIME=='start':
+                    selected_fil    = rams_files[0]
+                if WHICH_TIME=='middle':
+                    selected_fil    = rams_files[int(len(rams_files)/2)]
+                if WHICH_TIME=='end':
+                    selected_fil    = rams_files[-1]
+                print('        choosing the middle file: ',selected_fil)
+            else:
+                print("Alternate folder does not exist. Exiting function.")
 
     return selected_fil
    
@@ -211,17 +258,18 @@ def make_variogram(COORDS, VALUES, NBINS, MAXLAG, DX=1.0, BIN_FUNCTION='even',ES
     bins = np.subtract(bins, np.diff([0] + bins.tolist()) / 2)
     #print('        mid points of bins: ',bins)
     exp_variogram =  V.experimental
-    matrix_for_saving = np.array([bins,exp_variogram]).T
-    return V , bins, exp_variogram, matrix_for_saving
+    #matrix_for_saving = np.array([bins,exp_variogram]).T
+    return V , bins, exp_variogram#, matrix_for_saving
     
 def retrieve_histogram(VARIOGRAM,DX=1.0):
     print('        retreiving counts of pairwise obs per lag class ...')
-    bins_upper_edges = VARIOGRAM.bins
+    bins_upper_edges = VARIOGRAM.bins*DX
     counts = np.fromiter((g.size for g in VARIOGRAM.lag_classes()), dtype=int)
     widths = np.diff([0] + bins_upper_edges.tolist())
-    bins_middle_points   = np.subtract(bins_upper_edges, np.diff([0] + bins_upper_edges.tolist()) / 2)*DX
-    print('        widths of lag classes are: ',widths)
-    
+    bins_middle_points   = np.subtract(bins_upper_edges, np.diff([0] + bins_upper_edges.tolist()) / 2)
+    #print('        widths of lag classes are: ',widths)
+    #print('length of bins_middle_points:',len(bins_middle_points))
+    #print('length of width:',len(widths))
     return bins_middle_points, counts, widths
 
 def grab_intersection_gbig_gsmall_RAMS(VARIABLE,RAMS_G1_or_G2_FILE,RAMS_G3_FILE):
@@ -336,3 +384,88 @@ def arrange_images_with_wildcard(input_folder, output_file, wildcard_pattern, no
 
     # Save the result image
     result_image.save(output_file)
+    
+    
+def make_plan_view(WHICH_TIME, VARIABLE, SIMULATION, DOMAIN, SAMPLE_SIZE, CONDITION_INFO=None):
+
+    units_dict = {'Tk':'$K$','QV':'$kg kg^{-1}$','RH':'percent','WSPD':'$m s^{-1}$','U':'$m s^{-1}$',\
+              'V':'$m s^{-1}$','W':'$m s^{-1}$','MCAPE':'$J kg^{-1}$','MCIN':'$J kg^{-1}$','THETA':'$K$','QTC':'$kg kg^{-1}$'}
+    vmin_vmax_dict = {'Tk':[290,331,1],'QV':[0.006,0.0024,0.001],'RH':[70,101,1],'WSPD':[1,20,1],'U':[1,20,1],\
+              'V':[1,20,1],'W':[-5,21,1],'MCAPE':[100,3100,100],'MCIN':[0,310,10],'THETA':[290,331,1]}
+
+    print('Contour plotting ',VARIABLE,'\n')
+    
+
+    fig    = plt.figure(figsize=(8,8))
+    print('    working on simulation: ',SIMULATION)
+    #if model_name=='RAMS':   
+    selected_fil = variogram_helper_functions.find_RAMS_file(SIMULATION=SIMULATION,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
+    #if model_name=='WRF':
+    #        selected_fil =  variogram_helper_functions.find_WRF_file(SIMULATION=simulation,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
+    z, z_name, z_units, z_time = read_vars_WRF_RAMS.read_variable(selected_fil,VARIABLE[0],'RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+    y_dim,x_dim = np.shape(z)
+
+    if DOMAIN=='1':
+        dx=1.6
+    if DOMAIN=='2':
+        dx=0.4
+    if DOMAIN=='3':
+        dx=0.1
+    xx = np.arange(0,dx*x_dim,dx)
+    yy = np.arange(0,dx*y_dim,dx)
+    timestep_pd     = pd.to_datetime(z_time,format='%Y%m%d%H%M%S')
+
+    if CONDITION_INFO:
+    
+        if CONDITION_INFO[0]=='environment':
+            print('getting random coordinates over ',CONDITION_INFO[0],' points')
+            print('        getting total condensate for conditional variogram')
+            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+            #conditional_field = gaussian_filter(conditional_field, sigma=1) 
+            masked_z = np.ma.masked_where(conditional_field > CONDITION_INFO[1], z)
+            main_cont =plt.contourf(xx,yy,masked_z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+            #plt.contour(xx,yy,conditional_field,levels=[0.0001])
+            print('        min, max for the condensate field is ',np.min(conditional_field),' ',np.max(conditional_field))
+            coords = variogram_helper_functions.produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x < CONDITION_INFO[1])
+        if CONDITION_INFO[0]=='storm': 
+            print('getting random coordinates over ',CONDITION_INFO[0],' points')
+            print('        getting total condensate for conditional variogram')
+            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+            #conditional_field = gaussian_filter(conditional_field, sigma=1) 
+            masked_z = np.ma.masked_where(conditional_field <=CONDITION_INFO[1], z)
+            main_cont =plt.contourf(xx,yy,masked_z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+            print('        min, max for the condensate field is ',np.min(conditional_field),' ',np.max(conditional_field))
+            coords = variogram_helper_functions.produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x >= CONDITION_INFO[1])
+        if CONDITION_INFO[0]=='all':
+            print('getting random coordinates over ',CONDITION_INFO[0],' points')
+            coords = variogram_helper_functions.produce_random_coords(x_dim,y_dim,SAMPLE_SIZE)   
+            main_cont =plt.contourf(xx,yy,z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+
+        # Create scatter plot
+        y_coords, x_coords = zip(*coords)
+        plt.scatter(np.array(x_coords)*dx, np.array(y_coords)*dx, color='red', marker='o',s=.1)
+    else:
+        main_cont =plt.contourf(xx,yy,z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+        
+    if VARIABLE[2]:
+        if  VARIABLE[2]=='pressure':
+            level_units = ' mb'
+            lev = int(VARIABLE[1])
+        if  VARIABLE[2]=='model':
+            level_units = ''
+            lev = int(VARIABLE[1]+1)
+        title_string = SIMULATION+' '+VARIABLE[0]+' ('+units_dict[VARIABLE[0]]+')'+' at '+VARIABLE[2]+' level '+str(lev)+level_units+' for G'+DOMAIN+'\n'+timestep_pd.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        title_string = SIMULATION+' '+VARIABLE[0]+' ('+units_dict[VARIABLE[0]]+')'+' for G'+DOMAIN+'\n'+timestep_pd.strftime('%Y-%m-%d %H:%M:%S')
+    plt.title(title_string,fontsize=16)
+    plt.xlabel('x (km)',fontsize=16)
+    plt.ylabel('y (km)',fontsize=16)
+    plt.colorbar(main_cont)
+    if VARIABLE[2]:
+        filename = 'plan_view_RAMS_'+SIMULATION+'_G'+DOMAIN+'_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_'+z_time+'.png'
+    else:
+        filename = 'plan_view_RAMS_'+SIMULATION+'_G'+DOMAIN+'_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_'+z_time+'.png'
+    print('saving to png file: ',filename)
+    #plt.savefig(filename,dpi=150)
+    #plt.close()
+    print('\n\n')
