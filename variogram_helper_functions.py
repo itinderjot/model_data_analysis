@@ -1,5 +1,4 @@
 
-
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
@@ -20,6 +19,8 @@ import read_vars_WRF_RAMS
 from libpysal.weights.distance import DistanceBand
 import libpysal 
 from esda.moran import Moran
+from scipy.ndimage import gaussian_filter
+from wrf import smooth2d
 
 def find_WRF_file(SIMULATION,DOMAIN,WHICH_TIME):
     print('/monsoon/MODEL/LES_MODEL_DATA/V0/'+SIMULATION+'-V0/G'+DOMAIN+'/wrfout*')
@@ -386,10 +387,12 @@ def arrange_images_with_wildcard(input_folder, output_file, wildcard_pattern, no
     result_image.save(output_file)
     
     
-def make_plan_view(WHICH_TIME, VARIABLE, SIMULATION, DOMAIN, SAMPLE_SIZE, CONDITION_INFO=None):
+def make_plan_view(WHICH_TIME, VARIABLE, SIMULATION, DOMAIN, CMAP, SAMPLE_SIZE, SAVEFILE, CONDITION_INFO=None, MASKED_PLOT=False):
 
     units_dict = {'Tk':'$K$','QV':'$kg kg^{-1}$','RH':'percent','WSPD':'$m s^{-1}$','U':'$m s^{-1}$',\
-              'V':'$m s^{-1}$','W':'$m s^{-1}$','MCAPE':'$J kg^{-1}$','MCIN':'$J kg^{-1}$','THETA':'$K$','QTC':'$kg kg^{-1}$'}
+              'V':'$m s^{-1}$','W':'$m s^{-1}$','MCAPE':'$J kg^{-1}$','MCIN':'$J kg^{-1}$','THETA':'$K$','QTC':'$kg kg^{-1}$',\
+                  'SHF':'$W m^{-2}$', 'LHF':'$W m^{-2}$','MAXCOL_W':'$m s^{-1}$'}
+    
     vmin_vmax_dict = {'Tk':[290,331,1],'QV':[0.006,0.0024,0.001],'RH':[70,101,1],'WSPD':[1,20,1],'U':[1,20,1],\
               'V':[1,20,1],'W':[-5,21,1],'MCAPE':[100,3100,100],'MCIN':[0,310,10],'THETA':[290,331,1]}
 
@@ -399,7 +402,7 @@ def make_plan_view(WHICH_TIME, VARIABLE, SIMULATION, DOMAIN, SAMPLE_SIZE, CONDIT
     fig    = plt.figure(figsize=(8,8))
     print('    working on simulation: ',SIMULATION)
     #if model_name=='RAMS':   
-    selected_fil = variogram_helper_functions.find_RAMS_file(SIMULATION=SIMULATION,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
+    selected_fil = find_RAMS_file(SIMULATION=SIMULATION,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
     #if model_name=='WRF':
     #        selected_fil =  variogram_helper_functions.find_WRF_file(SIMULATION=simulation,DOMAIN=DOMAIN,WHICH_TIME=WHICH_TIME)
     z, z_name, z_units, z_time = read_vars_WRF_RAMS.read_variable(selected_fil,VARIABLE[0],'RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
@@ -416,36 +419,53 @@ def make_plan_view(WHICH_TIME, VARIABLE, SIMULATION, DOMAIN, SAMPLE_SIZE, CONDIT
     timestep_pd     = pd.to_datetime(z_time,format='%Y%m%d%H%M%S')
 
     if CONDITION_INFO:
-    
+        print('conditional information given')
         if CONDITION_INFO[0]=='environment':
-            print('getting random coordinates over ',CONDITION_INFO[0],' points')
-            print('        getting total condensate for conditional variogram')
-            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
-            #conditional_field = gaussian_filter(conditional_field, sigma=1) 
-            masked_z = np.ma.masked_where(conditional_field > CONDITION_INFO[1], z)
-            main_cont =plt.contourf(xx,yy,masked_z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
-            #plt.contour(xx,yy,conditional_field,levels=[0.0001])
+            print('        getting random coordinates over ',CONDITION_INFO[0],' points')
+            print('        conditioned on total condensate')
+            if VARIABLE[1]<0:
+                conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=True,level=0,interptype='model')
+            else:
+                conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+            if CONDITION_INFO[2]:
+                print('        smoothing the condition field')
+                conditional_field = smooth2d(conditional_field, passes=1, meta=False)
+                #conditional_field = gaussian_filter(conditional_field, sigma=1) 
+            if MASKED_PLOT:
+                masked_z = np.ma.masked_where(conditional_field > CONDITION_INFO[1], z)
+                main_cont =plt.contourf(xx,yy,masked_z,levels=30,cmap=CMAP,extend='both')
+            else:
+                main_cont =plt.contourf(xx,yy,z,levels=30,cmap=CMAP,extend='both')
             print('        min, max for the condensate field is ',np.min(conditional_field),' ',np.max(conditional_field))
-            coords = variogram_helper_functions.produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x < CONDITION_INFO[1])
+            coords = produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x < CONDITION_INFO[1])
         if CONDITION_INFO[0]=='storm': 
-            print('getting random coordinates over ',CONDITION_INFO[0],' points')
-            print('        getting total condensate for conditional variogram')
-            conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
-            #conditional_field = gaussian_filter(conditional_field, sigma=1) 
-            masked_z = np.ma.masked_where(conditional_field <=CONDITION_INFO[1], z)
-            main_cont =plt.contourf(xx,yy,masked_z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+            print('        getting random coordinates over ',CONDITION_INFO[0],' points')
+            print('        conditioned on total condensate')
+            if VARIABLE[1]<0:
+                conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=True,level=0,interptype='model')
+            else:
+                conditional_field, _, _, _ = read_vars_WRF_RAMS.read_variable(selected_fil,'QTC','RAMS',output_height=False,interpolate=VARIABLE[1]>-1,level=VARIABLE[1],interptype=VARIABLE[2])
+            if CONDITION_INFO[2]:
+                print('        smoothing the condition field')
+                conditional_field = smooth2d(conditional_field, passes=1, meta=False)
+                #conditional_field = gaussian_filter(conditional_field, sigma=1) 
+            if MASKED_PLOT:
+                masked_z = np.ma.masked_where(conditional_field <=CONDITION_INFO[1], z)
+                main_cont =plt.contourf(xx,yy,masked_z,levels=30,cmap=CMAP,extend='both')
+            else:
+                main_cont =plt.contourf(xx,yy,z,levels=30,cmap=CMAP,extend='both')
             print('        min, max for the condensate field is ',np.min(conditional_field),' ',np.max(conditional_field))
-            coords = variogram_helper_functions.produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x >= CONDITION_INFO[1])
+            coords = produce_random_coords_conditional(SAMPLE_SIZE, conditional_field, CONDITION_STATEMENT=lambda x: x >= CONDITION_INFO[1])
         if CONDITION_INFO[0]=='all':
             print('getting random coordinates over ',CONDITION_INFO[0],' points')
-            coords = variogram_helper_functions.produce_random_coords(x_dim,y_dim,SAMPLE_SIZE)   
-            main_cont =plt.contourf(xx,yy,z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+            coords = produce_random_coords(x_dim,y_dim,SAMPLE_SIZE)   
+            main_cont =plt.contourf(xx,yy,z,levels=30,cmap=CMAP,extend='both')
 
         # Create scatter plot
         y_coords, x_coords = zip(*coords)
-        plt.scatter(np.array(x_coords)*dx, np.array(y_coords)*dx, color='red', marker='o',s=.1)
+        plt.scatter(np.array(x_coords)*dx, np.array(y_coords)*dx, color='red', marker='o',s=.07)
     else:
-        main_cont =plt.contourf(xx,yy,z,levels=30,cmap=plt.get_cmap('viridis'),extend='both')
+        main_cont =plt.contourf(xx,yy,z,levels=30,cmap=CMAP,extend='both')
         
     if VARIABLE[2]:
         if  VARIABLE[2]=='pressure':
@@ -461,11 +481,13 @@ def make_plan_view(WHICH_TIME, VARIABLE, SIMULATION, DOMAIN, SAMPLE_SIZE, CONDIT
     plt.xlabel('x (km)',fontsize=16)
     plt.ylabel('y (km)',fontsize=16)
     plt.colorbar(main_cont)
-    if VARIABLE[2]:
-        filename = 'plan_view_RAMS_'+SIMULATION+'_G'+DOMAIN+'_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_'+z_time+'.png'
-    else:
-        filename = 'plan_view_RAMS_'+SIMULATION+'_G'+DOMAIN+'_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_'+z_time+'.png'
-    print('saving to png file: ',filename)
-    #plt.savefig(filename,dpi=150)
+    
+    if SAVEFILE:
+        if VARIABLE[2]:
+            filename = 'plan_view_RAMS_'+SIMULATION+'_G'+DOMAIN+'_'+VARIABLE[0]+'_levtype_'+VARIABLE[2]+'_lev_'+str(int(VARIABLE[1]))+'_'+z_time+'.png'
+        else:
+            filename = 'plan_view_RAMS_'+SIMULATION+'_G'+DOMAIN+'_'+VARIABLE[0]+'_levtype_'+'None'+'_lev_'+'None'+'_'+z_time+'.png'
+        print('saving to png file: ',filename)
+        plt.savefig(filename,dpi=150)
     #plt.close()
     print('\n\n')

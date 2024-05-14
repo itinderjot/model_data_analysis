@@ -185,7 +185,11 @@ def read_variable(filepath,variable,model_type,output_height=False,interpolate=F
         if variable=='W':
             var_name   = 'vertical velocity'
             var_units  = 'm/s'
-            output_var = da['WP'][:]    
+            output_var = da['WP'][:]   
+        if variable=='MAXCOL_W':
+            var_name   = 'max column vertical velocity'
+            var_units  = 'm/s'
+            output_var = np.max(da['WP'][:],axis=0)
         if variable=='THETA':
             var_name   = 'potential temperature'
             var_units  = 'K'
@@ -248,7 +252,13 @@ def read_variable(filepath,variable,model_type,output_height=False,interpolate=F
         if variable=='QTC':
             var_name   = 'total condensate mixing ratio'
             var_units  = 'kg/kg'
-            output_var = da['RTP'][:]-da['RV'][:]
+            rtp        = da['RTP'][:]
+            rtp[rtp<=0.0] = 0.000000000000001   
+            rv         = da['RV'][:]
+            rv[rv<=0.0]= 0.0
+            output_var = rtp-rv
+            output_var[output_var<=0.0]= 0.0
+            del(rtp,rv)
         if variable=='QTF':
             var_name   = 'total frozen condensate mixing ratio'
             var_units  = 'kg/kg'
